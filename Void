@@ -1,0 +1,37 @@
+local player = game.Players.LocalPlayer
+local playerName = player.Name
+
+-- Debugging: Log player name
+print("Debug: Player name is " .. playerName)
+
+-- Search the entire workspace for models named "AnchoredBlockStd"
+local allModels = workspace:GetDescendants()
+for _, model in ipairs(allModels) do
+	if model:IsA("Model") and model.Name == "AnchoredBlockStd" then
+		print("Debug: Found AnchoredBlockStd model: " .. model.Name)
+
+		-- Debug: Log all descendants of the model
+		for _, descendant in ipairs(model:GetDescendants()) do
+			print("Debug: Found descendant - Name: " .. descendant.Name .. ", Type: " .. descendant.ClassName)
+		end
+
+		-- Search for parts named "AnchoredStd" inside the "AnchoredBlockStd" model
+		for _, part in ipairs(model:GetDescendants()) do
+			if part:IsA("Part") and part.Name == "AnchoredStd" then
+				print("Debug: Found AnchoredStd part: " .. part.Name)
+
+				-- Check if the color of the part is Color3.fromRGB(60, 60, 60)
+				if part.Color == Color3.fromRGB(60, 60, 60) then
+					print("Debug: Part color matches (60, 60, 60)")
+
+					-- Change the part's X CFrame position to 800000
+					local currentCFrame = part.CFrame
+					part.CFrame = CFrame.new(800000, currentCFrame.Y, currentCFrame.Z)
+					print("Debug: Part CFrame updated to X = 800000")
+				else
+					print("Debug: Part color does not match (" .. tostring(part.Color) .. ")")
+				end
+			end
+		end
+	end
+end
