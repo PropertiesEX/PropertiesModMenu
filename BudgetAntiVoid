@@ -1,0 +1,93 @@
+local player = game.Players.LocalPlayer
+local playerName = player.Name
+local playerAircraft = workspace:FindFirstChild(playerName .. " Aircraft")
+
+-- Check if player's aircraft exists
+if not playerAircraft then
+    warn("Player's aircraft not found in workspace")
+    return
+end
+
+local noclipEnabled = false  -- Keeps track of the current noclip state
+local partsWithCollisions = {}  -- Store parts with collisions enabled for restoring later
+
+-- Function to enable noclip (disable collisions for player and aircraft)
+local function enableNoclip()
+    -- Disable collisions for the player's character
+    if player.Character then
+        for _, child in pairs(player.Character:GetDescendants()) do
+            if child:IsA("BasePart") and child.CanCollide then
+                table.insert(partsWithCollisions, child)
+                child.CanCollide = false
+            end
+        end
+    end
+    
+    -- Disable collisions for the player's aircraft
+    for _, part in ipairs(playerAircraft:GetDescendants()) do
+        if part:IsA("BasePart") and part.CanCollide then
+            table.insert(partsWithCollisions, part)
+            part.CanCollide = false
+        end
+    end
+    
+    noclipEnabled = true
+    print("Noclip enabled")
+end
+
+-- Function to disable noclip (restore collisions for player and aircraft)
+local function disableNoclip()
+    -- Restore collisions for the player's character
+    for _, part in ipairs(partsWithCollisions) do
+        if part and part:IsA("BasePart") then
+            part.CanCollide = true
+        end
+    end
+    partsWithCollisions = {}  -- Clear the table after restoring
+    
+    -- Restore collisions for the player's aircraft
+    for _, part in ipairs(playerAircraft:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = true
+        end
+    end
+    
+    noclipEnabled = false
+    print("Noclip disabled")
+end
+
+-- Create a GUI button to toggle noclip
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+local button = Instance.new("TextButton")
+button.Size = UDim2.new(0, 200, 0, 50)
+button.Position = UDim2.new(0.27, -100, 0.9, -52)
+button.Text = "Toggle Noclip"
+button.BackgroundColor3 = Color3.new(1, 0, 0)  -- Start with red background
+button.Parent = screenGui
+
+-- Button click event to toggle noclip
+button.MouseButton1Click:Connect(function()
+    if noclipEnabled then
+        disableNoclip()  -- Disable noclip (restore collisions)
+        button.BackgroundColor3 = Color3.new(1, 0, 0)  -- Set background to red
+    else
+        enableNoclip()  -- Enable noclip (disable collisions)
+        button.BackgroundColor3 = Color3.new(0, 1, 0)  -- Set background to green
+    end
+end)
+
+-- Function to check if the player's aircraft still exists
+local function checkAircraftExists()
+    while true do
+        wait(1)  -- Check every second
+        if not workspace:FindFirstChild(playerName .. " Aircraft") then
+            screenGui:Destroy()  -- Remove the GUI
+            break  -- Exit the loop
+        end
+    end
+end
+
+-- Start checking if the aircraft still exists
+checkAircraftExists()
