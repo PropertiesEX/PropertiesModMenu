@@ -1,0 +1,250 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
+local isRunning = true -- Flag to control script execution
+local previousAircraft = nil -- Store the last highlighted aircraft
+local currentBall = nil -- Track the current tracking ball
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+local explodeRemote = remotes:WaitForChild("Explode") -- Remote for explosion
+
+local missingAircrafts = {} -- Prevent spam warnings
+
+-- Debugging function
+local function debugPrint(message)
+    print("[DEBUG]: " .. message)
+end
+
+-- Function to get the player's own aircraft
+local function getPlayerAircraft(player)
+    local aircraftName = player.Name .. " Aircraft"
+    local aircraft = workspace:FindFirstChild(aircraftName)
+
+    if not aircraft then
+        if not missingAircrafts[player.Name] then
+            warn("[ERROR]: Aircraft not found for player " .. player.Name)
+            missingAircrafts[player.Name] = true -- Mark as missing
+        end
+        return nil
+    end
+
+    missingAircrafts[player.Name] = nil -- Remove from missing list if found
+    return aircraft
+end
+
+-- Function to find the player's BlockStd part with the target color
+local function findTargetBlock(aircraft)
+    -- Recursive function to check every part and its children
+    local function checkChildren(part)
+        -- Check if the part is the right BlockStd and color
+        if part:IsA("BasePart") and part.Name == "BlockStd" and part.Color == Color3.fromRGB(255, 128, 0) then
+            debugPrint("Target BlockStd part found: " .. part:GetFullName())
+            return part
+        end
+        -- Check each child recursively
+        for _, child in ipairs(part:GetChildren()) do
+            local result = checkChildren(child)
+            if result then
+                return result
+            end
+        end
+        return nil
+    end
+
+    -- Start checking from the aircraft model
+    return checkChildren(aircraft)
+end
+
+-- Function to move BlockStd part towards the tracking ball
+local function moveBlockToBall(block, ball)
+    if not block or not ball then
+        debugPrint("[ERROR]: Block or Ball is nil, cannot move.")
+        return
+    end
+
+    debugPrint("Starting movement of BlockStd part.")
+
+    local hasExploded = false  -- Flag to prevent multiple explosions
+
+    RunService.Heartbeat:Connect(function()
+        if block and ball and not hasExploded then
+            local direction = (ball.Position - block.Position).unit
+            block.Position = block.Position + direction * 10  -- Increase the speed multiplier to 10
+
+            -- Check if the block has reached the ball (distance threshold for explosion)
+            local distance = (block.Position - ball.Position).Magnitude
+            if distance < 5 then  -- You can adjust this threshold as needed
+                if not hasExploded then  -- Ensure explosion happens only once
+                    debugPrint("Block reached the target ball. Triggering explosion!")
+                    
+                    -- Trigger the explosion via the remote
+                    explodeRemote:FireServer(block)
+
+                    -- Add debug message for explosion
+                    debugPrint("Explosion triggered!")
+                    
+                    -- Set the flag to true to prevent further explosions
+                    hasExploded = true
+
+                    -- Optional: You can destroy the ball and block after explosion
+                    ball:Destroy()
+                    block:Destroy()
+                end
+            end
+        end
+    end)
+end
+
+-- Function to create an ESP highlight
+local function createESP(model, color)
+    local highlight = model:FindFirstChildOfClass("Highlight") or Instance.new("Highlight")
+    highlight.Parent = model
+    highlight.FillColor = color
+    highlight.FillTransparency = 0.75
+    highlight.OutlineColor = color
+    highlight.OutlineTransparency = 0
+    debugPrint("ESP added to " .. model.Name)
+    return highlight
+end
+
+-- Function to reset all ESP highlights
+local function resetAllHighlights()
+    for _, player in ipairs(Players:GetPlayers()) do
+        local aircraft = getPlayerAircraft(player)
+        if aircraft then
+            local highlight = aircraft:FindFirstChildOfClass("Highlight")
+            if highlight then
+                highlight.FillColor = Color3.fromRGB(0, 255, 0) -- Reset to green
+                highlight.OutlineColor = Color3.fromRGB(0, 255, 0)
+            end
+        end
+    end
+end
+
+-- Function to track aircrafts and add ESP every few seconds
+local function trackAircrafts()
+    if not isRunning then return end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local aircraft = getPlayerAircraft(player)
+            if aircraft and not aircraft:FindFirstChildOfClass("Highlight") then
+                createESP(aircraft, Color3.fromRGB(0, 255, 0)) -- Green ESP
+            end
+        end
+    end
+end
+
+-- Function to find the aircraft model that owns a part
+local function getAircraftFromPart(part)
+    while part and part.Parent do
+        if part.Parent:IsA("Model") and part.Parent:FindFirstChildOfClass("Highlight") then
+            return part.Parent
+        end
+        part = part.Parent
+    end
+    return nil
+end
+
+-- Function to create a tracking ball
+local function createTrackingBall(part)
+    if not part or not part:IsA("BasePart") then
+        warn("[ERROR]: Invalid part for tracking ball.")
+        return
+    end
+
+    -- Remove previous ball
+    if currentBall then
+        currentBall:Destroy()
+        currentBall = nil
+    end
+
+    local ball = Instance.new("Part")
+    ball.Shape = Enum.PartType.Ball
+    ball.Size = Vector3.new(2, 2, 2)
+    ball.Color = Color3.fromRGB(255, 105, 180) -- Pink
+    ball.Material = Enum.Material.Neon
+    ball.Anchored = false
+    ball.CanCollide = false
+    ball.CanTouch = false
+    ball.CanQuery = false
+    ball.Parent = workspace
+
+    -- Position and weld the ball
+    ball.CFrame = part.CFrame
+    local weld = Instance.new("WeldConstraint")
+    weld.Part0 = part
+    weld.Part1 = ball
+    weld.Parent = ball
+
+    currentBall = ball
+    debugPrint("Created tracking ball on " .. part:GetFullName())
+
+    -- Find and move the BlockStd part
+    local playerAircraft = getPlayerAircraft(LocalPlayer)
+    if playerAircraft then
+        local targetBlock = findTargetBlock(playerAircraft)
+        if targetBlock then
+            moveBlockToBall(targetBlock, ball)
+        else
+            debugPrint("[ERROR]: No valid BlockStd found in player's aircraft.")
+        end
+    else
+        debugPrint("[ERROR]: Player's aircraft not found.")
+    end
+end
+
+-- Function to change ESP color when clicking on an aircraft
+local function onInputBegan(input, gameProcessed)
+    if gameProcessed or not isRunning then return end
+
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        local mouse = LocalPlayer:GetMouse()
+
+        -- Perform a raycast from the mouse position
+        local ray = workspace.CurrentCamera:ScreenPointToRay(mouse.X, mouse.Y)
+        local raycastResult = workspace:Raycast(ray.Origin, ray.Direction * 9999)
+
+        if raycastResult then
+            local target = raycastResult.Instance
+            local aircraftModel = getAircraftFromPart(target)
+
+            if aircraftModel then
+                -- Reset all previous highlights
+                resetAllHighlights()
+
+                -- Change clicked aircraft's color to red
+                local highlight = aircraftModel:FindFirstChildOfClass("Highlight")
+                if highlight then
+                    highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                    highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
+                end
+
+                -- Create tracking ball
+                createTrackingBall(target)
+
+                previousAircraft = aircraftModel
+            end
+        end
+    end
+end
+
+-- Function to clean up highlights and reset when respawning
+local function onCharacterAdded()
+    task.wait(1) -- Small delay to allow character loading
+    resetAllHighlights()
+    isRunning = true -- Restart tracking
+    debugPrint("Respawn detected. Resetting highlights.")
+end
+
+-- Event connections
+UserInputService.InputBegan:Connect(onInputBegan)
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+
+task.spawn(function()
+    while isRunning do
+        trackAircrafts()
+        task.wait(5) -- Check every 5 seconds
+    end
+end)
